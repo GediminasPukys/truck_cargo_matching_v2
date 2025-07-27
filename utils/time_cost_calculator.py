@@ -125,7 +125,7 @@ def calculate_cost_matrix(trucks_df, cargo_df, max_distance_km=250, max_waiting_
                         'waiting_hours': waiting_hours,
                         'reason': rejection_reason
                     }
-
+    print(cost_matrix)
     return cost_matrix, time_info, rejection_info
 
 def optimize_assignments(trucks_df, cargo_df, max_distance_km=250, max_waiting_hours=24):

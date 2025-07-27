@@ -9,7 +9,7 @@ from utils.data_loader import load_data
 from utils.time_cost_calculator import optimize_assignments
 from utils.visualization import create_map
 from utils.time_cost_calculator import TimeCostCalculator, calculate_total_metrics
-
+from utils.route_planner import RoutePlanner
 
 def show_welcome_message():
     """Display welcome message and instructions"""
@@ -90,21 +90,6 @@ def main():
 
         st.markdown("---")
 
-        # Add optimization settings
-        st.header("⚙️ Settings")
-        standard_speed = st.number_input(
-            "Standard Speed (km/h)",
-            value=73,
-            min_value=1,
-            help="Speed used for travel time calculations"
-        )
-
-        show_debug = st.checkbox(
-            "Show Debug Information",
-            value=False,
-            help="Display additional debug information"
-        )
-
     # Load and validate data
     if trucks_file is not None and cargo_file is not None:
         try:
@@ -132,71 +117,148 @@ def main():
                 st.error(f"Missing required columns in cargo file: {required_cargo_columns}")
                 return
 
-            # Display data preview in expander
-            with st.expander("📊 Preview Input Data"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader("Trucks Data")
-                    st.dataframe(trucks_df)
-                    if show_debug:
-                        st.write("Unique truck types:", trucks_df['truck type'].unique())
-                with col2:
-                    st.subheader("Cargo Data")
-                    st.dataframe(cargo_df)
-                    if show_debug:
-                        st.write("Unique cargo types:", cargo_df['Cargo_Type'].unique())
+            # Add selection filters in sidebar
+            with st.sidebar:
+                st.header("🎯 Filter Selection")
 
-            # Show warning if unequal numbers
-            if len(trucks_df) != len(cargo_df):
-                st.warning(f"⚠️ Unequal numbers of trucks ({len(trucks_df)}) and cargo ({len(cargo_df)}). "
-                           f"Some will remain unassigned.")
-
-            try:
-                # Initialize calculator with custom speed if provided
-                calculator = TimeCostCalculator(standard_speed_kmh=standard_speed)
-
-                # Calculate optimized assignments
-                assignments, time_info, rejection_info = optimize_assignments(
-                    trucks_df,
-                    cargo_df,
-                    max_distance_km=250,  # Add default restrictions
-                    max_waiting_hours=24
+                # Truck selection
+                st.subheader("Select Trucks")
+                truck_filter_method = st.radio(
+                    "Truck Filter Method",
+                    ["All Trucks", "Select by ID", "Select by Type"],
+                    key="truck_filter"
                 )
 
-                if assignments:
-                    display_results(trucks_df, cargo_df, assignments, time_info, rejection_info, show_debug)
+                if truck_filter_method == "Select by ID":
+                    selected_trucks = st.multiselect(
+                        "Choose Trucks",
+                        options=sorted(trucks_df['truck_id'].unique()),
+                        default=sorted(trucks_df['truck_id'].unique())
+                    )
+                    trucks_df = trucks_df[trucks_df['truck_id'].isin(selected_trucks)]
+                elif truck_filter_method == "Select by Type":
+                    selected_truck_types = st.multiselect(
+                        "Choose Truck Types",
+                        options=sorted(trucks_df['truck type'].unique()),
+                        default=sorted(trucks_df['truck type'].unique())
+                    )
+                    trucks_df = trucks_df[trucks_df['truck type'].isin(selected_truck_types)]
+
+                # Cargo selection
+                st.subheader("Select Cargo")
+                cargo_filter_method = st.radio(
+                    "Cargo Filter Method",
+                    ["All Cargo", "Select by Type", "Select by Location"],
+                    key="cargo_filter"
+                )
+
+                if cargo_filter_method == "Select by Type":
+                    selected_cargo_types = st.multiselect(
+                        "Choose Cargo Types",
+                        options=sorted(cargo_df['Cargo_Type'].unique()),
+                        default=sorted(cargo_df['Cargo_Type'].unique())
+                    )
+                    cargo_df = cargo_df[cargo_df['Cargo_Type'].isin(selected_cargo_types)]
+                elif cargo_filter_method == "Select by Location":
+                    selected_origins = st.multiselect(
+                        "Choose Origin Locations",
+                        options=sorted(cargo_df['Origin'].unique()),
+                        default=sorted(cargo_df['Origin'].unique())
+                    )
+                    selected_destinations = st.multiselect(
+                        "Choose Delivery Locations",
+                        options=sorted(cargo_df['Delivery_Location'].unique()),
+                        default=sorted(cargo_df['Delivery_Location'].unique())
+                    )
+                    cargo_df = cargo_df[
+                        cargo_df['Origin'].isin(selected_origins) &
+                        cargo_df['Delivery_Location'].isin(selected_destinations)
+                        ]
+
+                st.markdown("---")
+
+                # Optimization settings
+                st.header("⚙️ Settings")
+                standard_speed = st.number_input(
+                    "Standard Speed (km/h)",
+                    value=73,
+                    min_value=1,
+                    help="Speed used for travel time calculations"
+                )
+
+                max_waiting_hours = st.number_input(
+                    "Maximum Waiting Hours",
+                    value=24,
+                    min_value=1,
+                    help="Maximum allowed waiting time at pickup"
+                )
+
+                max_distance = st.number_input(
+                    "Maximum Distance (km)",
+                    value=250,
+                    min_value=1,
+                    help="Maximum allowed distance for a single route"
+                )
+
+                show_debug = st.checkbox(
+                    "Show Debug Information",
+                    value=False,
+                    help="Display additional debug information"
+                )
+
+            # Display filtered data preview
+            with st.expander("📊 Preview Filtered Data"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader(f"Selected Trucks ({len(trucks_df)} total)")
+                    st.dataframe(trucks_df)
+                with col2:
+                    st.subheader(f"Selected Cargo ({len(cargo_df)} total)")
+                    st.dataframe(cargo_df)
+
+            # Proceed with optimization only if there are trucks and cargo
+            if len(trucks_df) == 0:
+                st.error("No trucks selected! Please adjust your truck filters.")
+                return
+
+            if len(cargo_df) == 0:
+                st.error("No cargo selected! Please adjust your cargo filters.")
+                return
+
+            try:
+                # Initialize route planner with custom speed
+                planner = RoutePlanner(standard_speed_kmh=standard_speed)
+                route_chains = {}
+
+                with st.spinner('Planning optimal routes...'):
+                    # Plan routes for each selected truck
+                    for idx, truck in trucks_df.iterrows():
+                        # Get route chain for this truck
+                        chain = planner.plan_route_chain(
+                            truck,
+                            cargo_df,
+                            truck['Timestamp (dropoff)'],
+                            pd.to_datetime(truck['Timestamp (dropoff)']) - pd.Timedelta(hours=8)
+                        )
+
+                        if chain:
+                            route_chains[idx] = chain
+
+                if route_chains:
+                    # Display results using the existing display_route_results function
+                    display_route_results(route_chains, trucks_df)
+
+                    # Create and display map
+                    st.header("🗺️ Route Visualization")
+                    map_obj = create_map(trucks_df, cargo_df, route_chains)
+                    folium_static(map_obj)
+
+                    # Export functionality remains the same...
                 else:
-                    st.error("❌ No valid assignments could be made.")
-
-                    # Display rejection reasons
-                    if rejection_info:
-                        st.subheader("Assignment Rejection Reasons:")
-                        rejection_data = []
-                        for (truck_idx, cargo_idx), info in rejection_info.items():
-                            rejection_data.append({
-                                "Truck ID": info['truck_id'],
-                                "Distance (km)": f"{info['distance']:.2f}",
-                                "Waiting Hours": f"{info['waiting_hours']:.2f}",
-                                "Reason": info['reason']
-                            })
-
-                        st.dataframe(pd.DataFrame(rejection_data))
-
-                    st.info("Common rejection reasons:")
-                    st.markdown("""
-                    - Distance exceeds maximum allowed (250 km)
-                    - Waiting time exceeds maximum allowed (24 h)
-                    - No matching truck and cargo types
-                    - No valid time windows for pickup
-                    """)
-
-                    if show_debug:
-                        st.write("Debug information:")
-                        st.json(time_info)
-                        st.json(rejection_info)
+                    st.warning("No valid routes found with the current selection. Try adjusting your filters.")
 
             except Exception as e:
-                st.error(f"Error during optimization: {str(e)}")
+                st.error(f"Error during route planning: {str(e)}")
                 if show_debug:
                     st.exception(e)
                 st.info("Please check your input data and try again.")
@@ -209,6 +271,77 @@ def main():
     else:
         show_welcome_message()
 
+def display_route_results(route_chains, trucks_df):
+    """Display route planning results in Streamlit"""
+    # Summary metrics
+    total_deliveries = sum(len(chain) for chain in route_chains.values())
+    total_distance = sum(
+        sum(route['total_distance'] for route in chain)
+        for chain in route_chains.values()
+    )
+    total_rest_stops = sum(
+        sum(len(route['rest_stops_to_pickup']) + len(route['rest_stops_to_delivery'])
+            for route in chain)
+        for chain in route_chains.values()
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Deliveries", total_deliveries)
+    with col2:
+        st.metric("Total Distance", f"{total_distance:.1f} km")
+    with col3:
+        st.metric("Required Rest Stops", total_rest_stops)
+
+    # Display route chains
+    st.subheader("📋 Detailed Route Plans")
+    for truck_idx, chain in route_chains.items():
+        truck = trucks_df.iloc[truck_idx]
+        with st.expander(f"Truck {truck['truck_id']} Route Plan"):
+            route_data = []
+            for i, route in enumerate(chain, 1):
+                rest_stops_count = len(route['rest_stops_to_pickup']) + len(route['rest_stops_to_delivery'])
+                total_rest_duration = sum(
+                    stop['duration'] for stop in route['rest_stops_to_pickup'] + route['rest_stops_to_delivery']
+                )
+
+                route_data.append({
+                    "Stop": i,
+                    "Cargo Type": route['cargo']['Cargo_Type'],
+                    "Pickup Location": route['cargo']['Origin'],
+                    "Delivery Location": route['cargo']['Delivery_Location'],
+                    "Pickup Time": route['pickup_time'],
+                    "Delivery Time": route['delivery_time'],
+                    "Distance (km)": f"{route['total_distance']:.1f}",
+                    "Rest Stops": rest_stops_count,
+                    "Rest Duration (h)": f"{total_rest_duration:.1f}" if rest_stops_count > 0 else "-",
+                    "Waiting Time (h)": f"{route['waiting_time']:.1f}"
+                })
+            st.dataframe(pd.DataFrame(route_data))
+
+            # Show rest stop details if any exist
+            rest_stops = []
+            for i, route in enumerate(chain, 1):
+                for rest in route['rest_stops_to_pickup']:
+                    rest_stops.append({
+                        "Route": i,
+                        "Phase": "To Pickup",
+                        "Time": rest['time'],
+                        "Duration (h)": rest['duration'],
+                        "Type": rest['type']
+                    })
+                for rest in route['rest_stops_to_delivery']:
+                    rest_stops.append({
+                        "Route": i,
+                        "Phase": "To Delivery",
+                        "Time": rest['time'],
+                        "Duration (h)": rest['duration'],
+                        "Type": rest['type']
+                    })
+
+            if rest_stops:
+                st.write("Rest Stop Details:")
+                st.dataframe(pd.DataFrame(rest_stops))
 
 def display_results(trucks_df, cargo_df, assignments, time_info, rejection_info, show_debug):
     """Display optimization results with detailed information"""
