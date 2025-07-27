@@ -1,0 +1,21 @@
+EXPERIMENT SUMMARY STATISTICS
+==================================================
+
+Assignment Statistics:
+- Total assignments: 42
+- Mean cost: €183.85
+- Median cost: €176.38
+- Std dev cost: €90.08
+- Min cost: €3.81
+- Max cost: €383.78
+
+Distance Statistics:
+- Mean distance: 125.69 km
+- Median distance: 144.91 km
+- Total distance: 5278.99 km
+
+Waiting Time Statistics:
+- Mean waiting: 5.82 hours
+- Median waiting: 3.87 hours
+- Total waiting: 244.27 hours
+- Assignments with waiting: 26
