@@ -40,7 +40,61 @@ Eksperimentinis tyrimas atliktas taikant kiekybinės analizės metodus:
 
 ## 2. Teorinis pagrindas
 
-### 2.1. Tiesinės priskyrimo problemos formulavimas
+### 2.1. Algoritmo pasirinkimo pagrindimas
+
+#### 2.1.1. Kodėl pasirinktas Vengrų (Hungarian) algoritmas?
+
+Vengrų algoritmas pasirinktas remiantis šiais kriterijais:
+
+1. **Optimalumo garantija**: Algoritmas garantuoja globaliai optimalų sprendimą tiesinės priskyrimo problemai, o ne tik lokalų optimumą.
+
+2. **Polinominis sudėtingumas**: O(n³) laiko sudėtingumas yra praktiškai priimtinas iki 1000-5000 objektų, kas atitinka tipišką Lietuvos logistikos įmonės poreikį.
+
+3. **Matematinis pagrįstumas**: Algoritmas paremtas dualumo teorija ir kombinatorine optimizacija, užtikrinant sprendimo stabilumą.
+
+4. **Praktinis pritaikomumas**: Plačiai naudojamas logistikos sektoriuje (UPS, FedEx, DHL) baziniams priskyrimo uždaviniams.
+
+5. **Paprastumas**: Lengvai suprantamas ir modifikuojamas specifiniams verslo poreikiams.
+
+#### 2.1.2. Alternatyvų analizė
+
+| Algoritmas | Privalumai | Trūkumai | Tinkamumas |
+|------------|------------|----------|------------|
+| **Vengrų algoritmas** | Optimalus, greitas mažiems duomenims | Netinka dinaminiam perplanavimui | ✓ Maketo fazei |
+| **Genetiniai algoritmai** | Lankstūs sudėtingiems apribojimams | Negarantuoja optimalumo | ✗ Per sudėtingi maketui |
+| **Tabu paieška** | Geri rezultatai dideliems duomenims | Reikalauja parametrų derinimo | ✗ Per daug konfigūracijos |
+| **Auction algoritmas** | Tinka realaus laiko sistemoms | Sudėtingesnis įgyvendinimas | → Būsimam prototipui |
+
+### 2.2. Praktiniai iššūkiai realioje logistikoje
+
+Remiantis MTEP tyrimo rezultatais ir rinkos analize, identifikuoti šie pagrindiniai praktiniai iššūkiai:
+
+#### 2.2.1. Dinamiškumo problema
+- **Iššūkis**: Realūs kroviniai atsiranda dinamiškai, o ne statiškai
+- **Poveikis**: Reikia nuolatinio perplanavimo
+- **Sprendimas prototipe**: Realaus laiko integracija su krovinių biržomis
+
+#### 2.2.2. Maršruto kompleksiškumas
+- **Iššūkis**: Realūs keliai nėra tiesios linijos (spūstys, apylankos, kelio darbai)
+- **Poveikis**: Faktinis atstumas 15-30% didesnis nei tiesinis
+- **Sprendimas prototipe**: Integracija su kelių API (Google Maps, HERE)
+
+#### 2.2.3. Kaštų modelio realumas
+- **Iššūkis**: Kaštai priklauso nuo daugelio kintamųjų (kuras, muitai, kelių mokesčiai)
+- **Poveikis**: Supaprastintas modelis duoda netikslias prognozes
+- **Sprendimas prototipe**: Daugiafaktorinis kaštų modelis
+
+#### 2.2.4. Vairuotojų darbo režimas
+- **Iššūkis**: EU 561/2006 taisyklės, savaitiniai/mėnesiniai limitai
+- **Poveikis**: Papildomi apribojimai priskyrimams
+- **Sprendimas prototipe**: Pilnas tachografo duomenų integravimas
+
+#### 2.2.5. Krovinių heterogeniškumas
+- **Iššūkis**: Dalinis pakrovimas, konsolidacija, prioritetai
+- **Poveikis**: Ne visi kroviniai vienodai svarbūs
+- **Sprendimas prototipe**: Daugiatikslis optimizavimas
+
+### 2.3. Tiesinės priskyrimo problemos formulavimas
 
 Krovinių ir sunkvežimių priskyrimo problema matematiškai aprašoma kaip:
 
@@ -56,7 +110,7 @@ Kur:
 - cᵢⱼ - kaštai priskiriant sunkvežimį i kroviniui j
 - xᵢⱼ - dvejetainis kintamasis (1 jei priskiriama, 0 priešingu atveju)
 
-### 2.2. Kaštų funkcijos struktūra
+### 2.4. Kaštų funkcijos struktūra
 
 Bendra kaštų funkcija:
 ```
@@ -263,58 +317,138 @@ Scatter diagrama atskleidžia, kad didžioji dalis priskyrimų turi minimalų la
    - Nėra daugiataškių maršrutų optimizavimo
    - Neintegruoti kelių tinklo duomenys
 
-## 6. Rekomendacijos prototipo kūrimui
+## 6. Praktinės rekomendacijos prototipo kūrimui
 
-### 6.1. Techninės rekomendacijos
+### 6.1. Kritiniai techniniai patobulinimai
 
-1. **Algoritmo tobulinimas:**
-   - Įdiegti daugiakriterinį optimizavimą
-   - Pridėti dinaminį perplanavimą
-   - Integruoti mašininio mokymosi prognozes
+#### 6.1.1. Realaus kaštų modelio įdiegimas
+```
+Realūs kaštai = Kuro sąnaudos(svoris, greitis, reljefas) + 
+                Kelių mokesčiai(maršrutas) + 
+                Vairuotojo darbo užmokestis(laikas, viršvalandžiai) +
+                Transporto amortizacija + 
+                Draudimas + 
+                Administracinės išlaidos
+```
+**Įgyvendinimas:**
+- Integruoti kuro sąnaudų API (pvz., Shell Fleet API)
+- Kelių mokesčių skaičiuoklė (TollGuru API)
+- Darbo laiko apskaitos sistema
 
-2. **Infrastruktūros plėtra:**
-   - Pereiti prie mikroservisų architektūros
-   - Įdiegti realaus laiko duomenų srautus
-   - Užtikrinti horizontalų masteliaviamumą
+#### 6.1.2. Maršruto kompleksiškumo sprendimas
+- **Problema**: Tiesinis atstumas ≠ realus atstumas
+- **Sprendimas**: 
+  - HERE Maps Routing API integracija
+  - Google Maps Distance Matrix API
+  - Realaus laiko eismo duomenys
+  - Istorinių duomenų analizė piko/ne piko valandoms
 
-3. **Integracija:**
-   - Prijungti realius kelių tinklo duomenis
-   - Integruoti su TMS/ERP sistemomis
-   - Pridėti API kitų sistemų integracijai
+#### 6.1.3. Dinaminio perplanavimo sistema
+```python
+# Pseudo-kodas
+while sistema_veikia:
+    if naujas_krovinys or vėlavimas or gedimas:
+        perplanuoti_maršrutus()
+        informuoti_vairuotojus()
+        atnaujinti_klientus()
+```
 
-### 6.2. Verslo modelio rekomendacijos
+### 6.2. Verslo procesų integracija
 
-1. **Operaciniai patobulinimai:**
-   - Padidinti atstumo limitą iki 300-350 km
-   - Įdiegti perkrovimo taškų (hub) sistemą
-   - Strategiškai pozicionuoti sunkvežimius
+#### 6.2.1. Realių duomenų šaltiniai
+1. **Krovinių biržos integracija:**
+   - Timocom API
+   - Trans.eu integracija  
+   - Loads Today duomenų srautas
+   - Realaus laiko krovinių monitoringas
 
-2. **Partnerystės:**
-   - Kurti vežėjų tinklus platesnei aprėpčiai
-   - Bendradarbiauti su logistikos platformomis
-   - Integruoti su krovinių biržomis
+2. **Transporto priemonių telematika:**
+   - GPS pozicijos (Wialon, Mapon)
+   - Tachografo duomenys (VDO, Stoneridge)
+   - Kuro sąnaudų monitoringas
+   - Techninės būklės stebėjimas
 
-3. **Kainodaros strategija:**
-   - Diferencijuota kainodara pagal atstumą
-   - Premijos už skubius krovinius
-   - Dinaminė kainodara pagal paklausą
+3. **Išorinės sistemos:**
+   - ERP integracija (SAP, Navision)
+   - WMS sąsaja sandėliams
+   - CMR/eCMR dokumentų valdymas
+   - Elektroninės sąskaitos
 
-### 6.3. Funkcionalumo plėtra
+#### 6.2.2. Praktinių apribojimų valdymas
 
-1. **Vartotojo patirties gerinimas:**
-   - Mobilioji aplikacija vairuotojams
-   - Realaus laiko stebėjimo sistema
-   - Automatiniai pranešimai
+**Vairuotojų darbo režimas (pilnas modelis):**
+```
+- Dienos vairavimas: max 9h (10h 2x/savaitę)
+- Savaitės vairavimas: max 56h
+- 2 savaičių vairavimas: max 90h
+- Nepertraukiamas vairavimas: max 4.5h
+- Pertrauka: min 45min (arba 15+30min)
+- Dienos poilsis: min 11h (9h 3x/savaitę)
+- Savaitės poilsis: 45h (24h kas antrą savaitę)
+```
 
-2. **Analitikos plėtra:**
-   - KPI stebėjimo skydelis
-   - Prognozavimo įrankiai
-   - Efektyvumo ataskaitos
+### 6.3. Konkrečios įgyvendinimo rekomendacijos
 
-3. **Papildomos funkcijos:**
-   - Krovinių konsolidavimas
-   - Grįžtamųjų reisų optimizavimas
-   - CO2 pėdsako skaičiavimas
+#### 6.3.1. MVP (Minimum Viable Product) fazė
+1. **Bazinė integracija** (1-2 mėn.):
+   - Vienos krovinių biržos API
+   - Google Maps maršrutizacija
+   - Paprastas kaštų modelis
+   - Web aplikacija
+
+2. **Pilotinis testavimas** (2-3 mėn.):
+   - 5-10 transporto priemonių
+   - Viena geografinė zona (pvz., Lietuva-Lenkija)
+   - Rankinis duomenų papildymas
+   - Rezultatų matavimas
+
+3. **Plėtra** (3-6 mėn.):
+   - Automatinis duomenų srautas
+   - Mobili aplikacija vairuotojams
+   - Platesnis geografinis regionas
+   - Dinaminis perplanavimas
+
+#### 6.3.2. Rizikų valdymas
+| Rizika | Tikimybė | Poveikis | Prevencija |
+|--------|----------|----------|------------|
+| API gedimai | Vidutinė | Didelis | Duomenų kešavimas, backup API |
+| Netikslūs duomenys | Didelė | Vidutinis | Validacijos taisyklės, ML anomalijų aptikimas |
+| Vairuotojų pasipriešinimas | Vidutinė | Didelis | Mokymai, paprastas UI, motyvacijos sistema |
+| Konkurentų reakcija | Maža | Vidutinis | Greitas MVP, unikalūs funkcionalumai |
+
+#### 6.3.3. Matavimo kriterijai (KPI)
+1. **Techniniai:**
+   - Priskyrimo sėkmės rodiklis (tikslas: >40%)
+   - Vidutinis skaičiavimo laikas (<10s)
+   - Sistema prieinamumas (>99.5%)
+
+2. **Verslo:**
+   - Tuščios ridos sumažinimas (>15%)
+   - Vidutinė marža/km padidėjimas (>10%)
+   - Vairuotojų pasitenkinimas (NPS >50)
+
+3. **Operaciniai:**
+   - Laiku pristatytų krovinių % (>95%)
+   - Vidutinis laukimo laikas (<2h)
+   - Maršruto nukrypimų skaičius (<5%)
+
+### 6.4. Investicijų poreikis
+
+#### 6.4.1. Pradinės investicijos (MVP)
+- Programinės įrangos kūrimas: 40,000-60,000 EUR
+- API licencijos: 500-1,000 EUR/mėn
+- Infrastruktūra: 200-500 EUR/mėn
+- Testavimas ir diegimas: 10,000-15,000 EUR
+
+#### 6.4.2. Grąžos skaičiavimas
+```
+Metinė nauda = (Sutaupytos tuščios ridos km × 0.5 EUR/km) +
+               (Papildomi kroviniai × vidutinė marža) +
+               (Sumažintas administravimo laikas × valandinis tarifas)
+
+ROI = (Metinė nauda - Metinės išlaidos) / Pradinė investicija × 100%
+Atsipirkimo laikas: 12-18 mėn.
+```
 
 ## 7. Išvados
 
